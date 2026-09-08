@@ -1,0 +1,3 @@
+(fp_lib_table
+  (lib (name "dongle")(type "KiCad")(uri "${KIPRJMOD}/dongle.pretty")(options "")(descr "Project-specific footprints for the DWM3000 USB dongle (USB-A receptacle, SWD box header)"))
+)
