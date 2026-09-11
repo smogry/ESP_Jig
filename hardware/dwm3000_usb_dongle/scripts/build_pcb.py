@@ -37,6 +37,7 @@ def extract_balanced(s, start):
 text = open(NET_FILE, encoding="utf-8").read()
 
 components = {}  # ref -> footprint
+values = {}      # ref -> schematic Value (so PCB silkscreen matches, not just the bare footprint name)
 i = 0
 while True:
     m = re.search(r'\(comp \(ref "([^"]+)"\)', text[i:])
@@ -48,6 +49,9 @@ while True:
     fm = re.search(r'\(footprint "([^"]+)"\)', block)
     if fm:
         components[ref] = fm.group(1)
+    vm = re.search(r'\(value "([^"]*)"\)', block)
+    if vm:
+        values[ref] = vm.group(1)
     i = start + len(block)
 
 nets = []  # (name, [(ref, pin), ...])
@@ -117,6 +121,8 @@ for ref, fp_id in components.items():
     if fp is None:
         raise RuntimeError(f"could not load footprint {fp_id} for {ref}")
     fp.SetReference(ref)
+    if ref in values:
+        fp.SetValue(values[ref])
     x, y = placement[ref]
     fp.SetPosition(pcbnew.VECTOR2I(pcbnew.FromMM(x), pcbnew.FromMM(y)))
     board.Add(fp)
