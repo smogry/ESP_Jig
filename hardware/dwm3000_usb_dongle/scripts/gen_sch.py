@@ -7,6 +7,7 @@ import uuid
 import math
 
 KICAD_SYM_DIR = "/usr/share/kicad/symbols"
+EXTRA_SYM_DIR = "/home/user/ESP_Jig/hardware/dwm3000_usb_dongle/extra_symbols"
 OUT_DIR = "/home/user/ESP_Jig/hardware/dwm3000_usb_dongle"
 PROJECT_NAME = "dwm3000_usb_dongle"
 
@@ -41,7 +42,6 @@ def reindent(block, indent="    "):
 
 
 LIB_SOURCES = {
-    "MCU_ST_STM32F0": ("MCU_ST_STM32F0.kicad_sym", ["STM32F042F6Px"]),
     "RF_Module": ("RF_Module.kicad_sym", ["DWM1000", "DWM3000"]),
     "Regulator_Linear": ("Regulator_Linear.kicad_sym", ["XC6220B331MR"]),
     "Connector": ("Connector.kicad_sym", ["USB_A"]),
@@ -81,7 +81,7 @@ def build_lib_symbols():
     parts = []
     cache = {}  # (fname, sym) -> raw extracted block, for resolving "extends"
     for lib_nick, (fname, symbols) in LIB_SOURCES.items():
-        path = f"{KICAD_SYM_DIR}/{fname}"
+        path = fname if fname.startswith("/") else f"{KICAD_SYM_DIR}/{fname}"
         for sym in symbols:
             raw = extract_symbol_block(path, sym)
             cache[sym] = raw
@@ -110,32 +110,77 @@ def build_lib_symbols():
             parts.append(reindent(block))
     return "\n".join(parts)
 
+
+def build_stm32c071_symbol():
+    """Hand-emit an old-format (KiCad 7.0-compatible) lib_symbol for
+    STM32C071F8Px. The upstream KiCad symbol (extra_symbols/STM32C071F8Px.kicad_sym,
+    pulled from the current kicad-symbols master) uses newer generator-10.0
+    syntax (show_name/do_not_autoplace/exclude_from_sim etc.) that this
+    project's KiCad 7.0.11 cannot parse, so this reproduces the same pin
+    table (STM32_PINS) in the same plain style used by the other symbols
+    here instead of extracting it verbatim."""
+    name = "MCU_ST_STM32C0:STM32C071F8Px"
+    lines = [f'  (symbol "{name}" (in_bom yes) (on_board yes)']
+    lines.append('    (property "Reference" "U" (at -25.4 23.86 0)')
+    lines.append('      (effects (font (size 1.27 1.27)) (justify left))')
+    lines.append('    )')
+    lines.append('    (property "Value" "STM32C071F8Px" (at 2.54 23.86 0)')
+    lines.append('      (effects (font (size 1.27 1.27)) (justify left))')
+    lines.append('    )')
+    lines.append('    (property "Footprint" "Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm" (at -25.4 -21.32 0)')
+    lines.append('      (effects (font (size 1.27 1.27)) (justify right) hide)')
+    lines.append('    )')
+    lines.append('    (property "Datasheet" "https://www.st.com/resource/en/datasheet/stm32c071f8.pdf" (at 0 0 0)')
+    lines.append('      (effects (font (size 1.27 1.27)) hide)')
+    lines.append('    )')
+    lines.append('    (symbol "STM32C071F8Px_0_1"')
+    lines.append('      (rectangle (start -22.86 -20.32) (end 22.86 20.32)')
+    lines.append('        (stroke (width 0.254) (type default))')
+    lines.append('        (fill (type background))')
+    lines.append('      )')
+    lines.append('    )')
+    lines.append('    (symbol "STM32C071F8Px_1_1"')
+    for num, (x, y, ang, length, pname) in STM32_PINS.items():
+        etype = "power_in" if pname in ("VDD", "VSS") else "bidirectional"
+        lines.append(f'      (pin {etype} line (at {x:g} {y:g} {ang}) (length {length:g})')
+        lines.append(f'        (name "{pname}" (effects (font (size 1.27 1.27))))')
+        lines.append(f'        (number "{num}" (effects (font (size 1.27 1.27))))')
+        lines.append('      )')
+    lines.append('    )')
+    lines.append('  )')
+    return "\n".join(lines)
+
 # ---------------------------------------------------------------------------
 # Pin geometry tables: (pin_number -> (x, y, angle_deg, length, elec_type, name))
 # angle: 0=right,90=up,180=left,270=down (library Y-up convention)
 # ---------------------------------------------------------------------------
 
+# STM32C071F8Px (TSSOP20) -- pin table taken verbatim from the official KiCad
+# symbol (MCU_ST_STM32C0:STM32C071F8Px, ST-generated data, Oct 2024).
+# NOTE: this package has NO dedicated NRST pin and NO separate VDDA pin
+# (single VDD/VSS supply pair) -- both differ from the STM32F042F6Px this
+# replaced. See extra_symbols/STM32C071F8Px.kicad_sym for the source symbol.
 STM32_PINS = {
-    "1":  (-15.24, 0,      0,   2.54, "PB8"),
-    "2":  (-15.24, 10.16,  0,   2.54, "PF0"),
-    "3":  (-15.24, 7.62,   0,   2.54, "PF1"),
-    "4":  (-15.24, 15.24,  0,   2.54, "NRST"),
-    "5":  (2.54,   20.32,  270, 2.54, "VDDA"),
-    "6":  (15.24,  15.24,  180, 2.54, "PA0"),
-    "7":  (15.24,  12.7,   180, 2.54, "PA1"),
-    "8":  (15.24,  10.16,  180, 2.54, "PA2"),
-    "9":  (15.24,  7.62,   180, 2.54, "PA3"),
-    "10": (15.24,  5.08,   180, 2.54, "PA4"),
-    "11": (15.24,  2.54,   180, 2.54, "PA5"),
-    "12": (15.24,  0,      180, 2.54, "PA6"),
-    "13": (15.24,  -2.54,  180, 2.54, "PA7"),
-    "14": (-15.24, 2.54,   0,   2.54, "PB1"),
-    "15": (0,      -20.32, 90,  2.54, "VSSA"),
-    "16": (0,      20.32,  270, 2.54, "VDD"),
-    "17": (15.24,  -5.08,  180, 2.54, "PA9/PA11"),
-    "18": (15.24,  -7.62,  180, 2.54, "PA10/PA12"),
-    "19": (15.24,  -10.16, 180, 2.54, "PA13"),
-    "20": (15.24,  -12.7,  180, 2.54, "PA14"),
+    "1":  (-25.4, 0,      0,   2.54, "PB7/PB8"),
+    "2":  (-25.4, 10.16,  0,   2.54, "PC14"),
+    "3":  (-25.4, 7.62,   0,   2.54, "PC15"),
+    "4":  (0,     22.86,  270, 2.54, "VDD"),
+    "5":  (0,     -22.86, 90,  2.54, "VSS"),
+    "6":  (-25.4, 15.24,  0,   2.54, "PF2"),
+    "7":  (25.4,  15.24,  180, 2.54, "PA0"),
+    "8":  (25.4,  12.7,   180, 2.54, "PA1"),
+    "9":  (25.4,  10.16,  180, 2.54, "PA2"),
+    "10": (25.4,  7.62,   180, 2.54, "PA3"),
+    "11": (25.4,  5.08,   180, 2.54, "PA4"),
+    "12": (25.4,  2.54,   180, 2.54, "PA5"),
+    "13": (25.4,  0,      180, 2.54, "PA6"),
+    "14": (25.4,  -2.54,  180, 2.54, "PA7"),
+    "15": (25.4,  -5.08,  180, 2.54, "PA8"),
+    "16": (25.4,  -7.62,  180, 2.54, "PA11"),
+    "17": (25.4,  -10.16, 180, 2.54, "PA12"),
+    "18": (25.4,  -12.7,  180, 2.54, "PA13"),
+    "19": (25.4,  -15.24, 180, 2.54, "PA14/PA15"),
+    "20": (-25.4, 2.54,   0,   2.54, "PB3/PB4/PB5/PB6"),
 }
 
 DWM_PINS = {
@@ -352,11 +397,9 @@ C1 = sch.place("Device:C", "C1", "10uF", "Capacitor_SMD:C_0805_2012Metric", (65,
 C2 = sch.place("Device:C", "C2", "10uF", "Capacitor_SMD:C_0805_2012Metric", (125, 135), C_PINS)
 
 # --- MCU section ---
-U1 = sch.place("MCU_ST_STM32F0:STM32F042F6Px", "U1", "STM32F042F6P6",
-               "Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm", (185, 110), STM32_PINS)
+U1 = sch.place("MCU_ST_STM32C0:STM32C071F8Px", "U1", "STM32C071F8P6",
+               "Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm", (190, 115), STM32_PINS)
 C3 = sch.place("Device:C", "C3", "100nF", "Capacitor_SMD:C_0603_1608Metric", (150, 55), C_PINS)
-C4 = sch.place("Device:C", "C4", "100nF", "Capacitor_SMD:C_0603_1608Metric", (210, 55), C_PINS)
-C5 = sch.place("Device:C", "C5", "100nF", "Capacitor_SMD:C_0603_1608Metric", (135, 90), C_PINS)
 R1 = sch.place("Device:R", "R1", "22R", "Resistor_SMD:R_0603_1608Metric", (145, 135), R_PINS)
 R2 = sch.place("Device:R", "R2", "22R", "Resistor_SMD:R_0603_1608Metric", (170, 135), R_PINS)
 D1 = sch.place("Device:LED", "D1", "LED", "LED_SMD:LED_0603_1608Metric", (225, 45), LED_PINS)
@@ -455,34 +498,31 @@ label_pin(R1, "2", "USB_DM_MCU", stub_len=7.0, label_angle=90)
 label_pin(R2, "1", "USB_DP", stub_len=7.0, label_angle=90)
 label_pin(R2, "2", "USB_DP_MCU", stub_len=7.0, label_angle=90)
 
-# ---- STM32 U1 ----
-nc_pin(U1, "2")     # PF0 spare
-nc_pin(U1, "3")     # PF1 spare
-nc_pin(U1, "10")    # PA4 spare
-nc_pin(U1, "14")    # PB1 spare
+# ---- STM32 U1 (STM32C071F8Px: no NRST pin, no separate VDDA pin) ----
+nc_pin(U1, "2")     # PC14 spare
+nc_pin(U1, "3")     # PC15 spare
+nc_pin(U1, "6")     # PF2 spare
+nc_pin(U1, "11")    # PA4 spare
+nc_pin(U1, "15")    # PA8 spare
+nc_pin(U1, "20")    # PB3/PB4/PB5/PB6 spare
 
-label_pin(U1, "1", "LED1_CTRL")                     # PB8 -> LED1 cathode
-label_pin(U1, "4", "NRST")                          # NRST
-wire_to_power(U1, "5", "+3V3")                      # VDDA
-label_pin(U1, "6", "DWM_WAKEUP")                    # PA0
-label_pin(U1, "7", "DWM_RSTN")                      # PA1
-label_pin(U1, "8", "DWM_IRQ")                       # PA2
-label_pin(U1, "9", "SPI_CS")                        # PA3
-label_pin(U1, "11", "SPI_SCK")                      # PA5
-label_pin(U1, "12", "SPI_MISO")                     # PA6
-label_pin(U1, "13", "SPI_MOSI")                     # PA7
-wire_to_power(U1, "15", "GND")                      # VSSA
-wire_to_power(U1, "16", "+3V3")                     # VDD
-label_pin(U1, "17", "USB_DM_MCU", stub_len=7.0)      # PA9/PA11
-label_pin(U1, "18", "USB_DP_MCU", stub_len=7.0)      # PA10/PA12
-label_pin(U1, "19", "SWDIO")                        # PA13
-label_pin(U1, "20", "SWCLK")                        # PA14
+label_pin(U1, "1", "LED1_CTRL")                     # PB7/PB8 -> LED1 cathode
+wire_to_power(U1, "4", "+3V3")                      # VDD
+wire_to_power(U1, "5", "GND")                       # VSS
+label_pin(U1, "7", "DWM_WAKEUP")                    # PA0
+label_pin(U1, "8", "DWM_RSTN")                      # PA1
+label_pin(U1, "9", "DWM_IRQ")                       # PA2
+label_pin(U1, "10", "SPI_CS")                       # PA3
+label_pin(U1, "12", "SPI_SCK")                      # PA5
+label_pin(U1, "13", "SPI_MISO")                     # PA6
+label_pin(U1, "14", "SPI_MOSI")                     # PA7
+label_pin(U1, "16", "USB_DM_MCU", stub_len=7.0)      # PA11 (native USB_DM, no remap needed)
+label_pin(U1, "17", "USB_DP_MCU", stub_len=7.0)      # PA12 (native USB_DP, no remap needed)
+label_pin(U1, "18", "SWDIO")                        # PA13
+label_pin(U1, "19", "SWCLK")                        # PA14/PA15
 
-# C3 (VDD decoupling), C4 (VDDA decoupling), C5 (NRST filter)
+# C3: single VDD/VSS decoupling cap (this package has no separate VDDA pin)
 wire_to_power(C3, "1", "+3V3"); wire_to_power(C3, "2", "GND")
-wire_to_power(C4, "1", "+3V3"); wire_to_power(C4, "2", "GND")
-label_pin(C5, "1", "NRST")
-wire_to_power(C5, "2", "GND")
 
 # LED1 status indicator: +3V3 -R3- LED1(A->K) - LED1_CTRL(U1 PB8 sinks)
 wire_to_power(R3, "1", "+3V3")
@@ -495,11 +535,11 @@ label_pin(J2, "2", "SWDIO")
 wire_to_power(J2, "3", "GND")
 label_pin(J2, "4", "SWCLK")
 wire_to_power(J2, "5", "GND")
-nc_pin(J2, "6")                  # SWO - not present on Cortex-M0
+nc_pin(J2, "6")                  # SWO - not present on Cortex-M0+
 nc_pin(J2, "7")                  # KEY
-nc_pin(J2, "8")                  # TDI - not present on Cortex-M0 (SWD only)
+nc_pin(J2, "8")                  # TDI - not present on Cortex-M0+ (SWD only)
 wire_to_power(J2, "9", "GND")
-label_pin(J2, "10", "NRST")      # nRESET
+nc_pin(J2, "10")                 # nRESET - STM32C071F8Px has no NRST pin to wire to
 
 # ---- DWM3000 module ----
 nc_pin(DWM1, "1")   # EXTON (device-enable output; not used)
@@ -542,7 +582,7 @@ label_pin(D3, "1", "RXLED_CTRL")
 
 # ---- Section titles ----
 sch.text("USB / Power Supply (5V -> 3.3V, XC6220B331)", (18, 50), size=2.0)
-sch.text("STM32F042F6P6 (Host MCU)", (155, 30), size=2.0)
+sch.text("STM32C071F8P6 (Host MCU)", (155, 30), size=2.0)
 sch.text("SWD Programming Connector", (155, 195), size=2.0)
 sch.text("DWM3000 UWB Module", (295, 15), size=2.0)
 
@@ -550,7 +590,7 @@ sch.text("DWM3000 UWB Module", (295, 15), size=2.0)
 # Emit the .kicad_sch file
 # ---------------------------------------------------------------------------
 
-lib_symbols = build_lib_symbols()
+lib_symbols = build_stm32c071_symbol() + "\n" + build_lib_symbols()
 
 sch_text = f'''(kicad_sch (version 20230121) (generator eeschema)
   (uuid {ROOT_UUID})
