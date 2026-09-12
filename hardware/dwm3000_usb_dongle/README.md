@@ -44,6 +44,7 @@ the netlist (`kicad-cli sch export netlist ...`) and re-run `scripts/build_pcb.p
 | C3, C7 | Ceramic | 100nF | Capacitor_SMD:C_0603_1608Metric |
 | C6 | Ceramic | 1uF | Capacitor_SMD:C_0603_1608Metric |
 | R1, R2 | USB D+/D- series | 22R | Resistor_SMD:R_0603_1608Metric |
+| R6 | **DNP** — optional USB D+ pull-up (fitted only if needed, see below) | 1.5k | Resistor_SMD:R_0603_1608Metric |
 | R3 | Status LED series | 1k | Resistor_SMD:R_0603_1608Metric |
 | R4, R5 | TX/RX LED series | 330R | Resistor_SMD:R_0603_1608Metric |
 | D1 | Status LED (MCU-driven) | LED | LED_SMD:LED_0603_1608Metric |
@@ -93,6 +94,17 @@ without an external crystal.
 them as USB), this package brings out true PA11 (USB_DM) and PA12 (USB_DP)
 directly on pins 16/17 — firmware just needs to enable the USB peripheral,
 no pin remap step required.
+
+**Optional USB D+ pull-up (R6, DNP by default)**: every ST full-speed USB
+device peripheral in this IP family (F0/G0/L0/C0) has always had a
+software-controlled internal D+ pull-up (`USB_BCDR.DPPU`), so no external
+one should be needed here either — but this project's tools couldn't reach
+st.com to confirm that against the STM32C071 reference manual directly, so
+**R6** (1.5k, USB_DP_MCU to +3V3, right at the R2/PA12 side) is included as
+a footprint-only safety net: leave it unpopulated (its default `DNP` state)
+and bring the board up first. Only stuff R6 if enumeration fails or the
+device isn't detected as full-speed, which would indicate the internal
+pull-up either isn't present or isn't enabled by your firmware.
 
 **No NRST pin on this package**: unlike the F042F6P6, this specific
 TSSOP20 STM32C0 variant has no dedicated reset pin at all (18 GPIO instead —
@@ -162,9 +174,10 @@ selected via the `nBOOT0`/`nBOOT_SEL` option bytes through the SWD debugger
   the expected 16 signal nets + `+3V3`/`+5V`/`GND`, with every "spare"/unused
   pin explicitly flagged no-connect (verified pin-by-pin against the
   intended design above, including J2 pin 10 now that the MCU has no NRST).
-* All 18 components loaded their real KiCad footprints (including the 2
-  custom ones) and were placed non-overlapping on a board with all 40 nets
-  wired from the netlist (`dwm3000_usb_dongle.kicad_pcb`).
+* All 19 components (18 fitted + DNP R6) loaded their real KiCad footprints
+  (including the 2 custom ones) and were placed non-overlapping on a board
+  with all 40 nets wired from the netlist (`dwm3000_usb_dongle.kicad_pcb`).
+  R6 is marked excluded from BOM/position files to match its schematic DNP flag.
 * Schematic and PCB were rendered to PDF/SVG/PNG for visual review.
 
 ### A note on the STM32C071F8Px symbol

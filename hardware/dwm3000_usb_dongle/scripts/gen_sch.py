@@ -262,7 +262,7 @@ class Schematic:
 
     def place(self, lib_id, ref, value, footprint, pos, pin_table, angle=0, mirror=None,
               ref_offset=(2.0, -2.0), value_offset=(2.0, 2.0), extra_props=None,
-              hide_value=False, hide_footprint=True):
+              hide_value=False, hide_footprint=True, dnp=False):
         x0, y0 = pos
         uid = new_uuid()
         props = []
@@ -288,7 +288,7 @@ class Schematic:
         instance_path_uuid = new_uuid()
         block = f'''  (symbol (lib_id "{lib_id}") (at {x0:.2f} {y0:.2f} {angle}){" (mirror " + mirror + ")" if mirror else ""}
     (unit 1)
-    (in_bom yes) (on_board yes) (dnp no)
+    (in_bom yes) (on_board yes) (dnp {"yes" if dnp else "no"})
     (uuid {uid})
 {chr(10).join("    " + p for p in props)}
 {pins}
@@ -402,6 +402,8 @@ U1 = sch.place("MCU_ST_STM32C0:STM32C071F8Px", "U1", "STM32C071F8P6",
 C3 = sch.place("Device:C", "C3", "100nF", "Capacitor_SMD:C_0603_1608Metric", (150, 55), C_PINS)
 R1 = sch.place("Device:R", "R1", "22R", "Resistor_SMD:R_0603_1608Metric", (145, 135), R_PINS)
 R2 = sch.place("Device:R", "R2", "22R", "Resistor_SMD:R_0603_1608Metric", (170, 135), R_PINS)
+R6 = sch.place("Device:R", "R6", "DNP 1.5k (see README: only if MCU lacks an internal USB D+ pull-up)",
+                "Resistor_SMD:R_0603_1608Metric", (195, 135), R_PINS, dnp=True)
 D1 = sch.place("Device:LED", "D1", "LED", "LED_SMD:LED_0603_1608Metric", (225, 45), LED_PINS)
 R3 = sch.place("Device:R", "R3", "1k", "Resistor_SMD:R_0603_1608Metric", (225, 25), R_PINS)
 
@@ -497,6 +499,11 @@ label_pin(R1, "1", "USB_DM", stub_len=7.0, label_angle=90)
 label_pin(R1, "2", "USB_DM_MCU", stub_len=7.0, label_angle=90)
 label_pin(R2, "1", "USB_DP", stub_len=7.0, label_angle=90)
 label_pin(R2, "2", "USB_DP_MCU", stub_len=7.0, label_angle=90)
+
+# R6: DNP (do-not-populate) external USB D+ pull-up, only stuffed if bring-up
+# testing shows the STM32C071's internal D+ pull-up isn't present/sufficient.
+wire_to_power(R6, "1", "+3V3")
+label_pin(R6, "2", "USB_DP_MCU", stub_len=7.0, label_angle=90)
 
 # ---- STM32 U1 (STM32C071F8Px: no NRST pin, no separate VDDA pin) ----
 nc_pin(U1, "2")     # PC14 spare
