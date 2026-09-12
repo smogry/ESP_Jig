@@ -37,6 +37,7 @@ def extract_balanced(s, start):
 text = open(NET_FILE, encoding="utf-8").read()
 
 components = {}  # ref -> footprint
+values = {}      # ref -> schematic Value (so PCB silkscreen matches, not just the bare footprint name)
 i = 0
 while True:
     m = re.search(r'\(comp \(ref "([^"]+)"\)', text[i:])
@@ -48,6 +49,9 @@ while True:
     fm = re.search(r'\(footprint "([^"]+)"\)', block)
     if fm:
         components[ref] = fm.group(1)
+    vm = re.search(r'\(value "([^"]*)"\)', block)
+    if vm:
+        values[ref] = vm.group(1)
     i = start + len(block)
 
 nets = []  # (name, [(ref, pin), ...])
@@ -73,8 +77,8 @@ placement = {
     # Power supply
     "J1": (25, 30), "U2": (65, 30), "C1": (65, 55), "C2": (85, 55),
     # MCU
-    "U1": (150, 55), "C3": (120, 25), "C4": (180, 25), "C5": (110, 55),
-    "R1": (130, 90), "R2": (150, 90), "D1": (195, 32), "R3": (195, 18),
+    "U1": (150, 55), "C3": (120, 25),
+    "R1": (130, 90), "R2": (150, 90), "R6": (170, 90), "D1": (195, 32), "R3": (195, 18),
     # SWD
     "J2": (150, 130),
     # DWM3000
@@ -117,6 +121,14 @@ for ref, fp_id in components.items():
     if fp is None:
         raise RuntimeError(f"could not load footprint {fp_id} for {ref}")
     fp.SetReference(ref)
+    if ref in values:
+        fp.SetValue(values[ref])
+        if values[ref].upper().startswith("DNP"):
+            # KiCad 7.0.11's pcbnew has no direct footprint DNP flag yet;
+            # excluding from BOM/pos files is the practical PCB-side
+            # equivalent of the schematic symbol's (dnp yes) attribute.
+            fp.SetExcludedFromBOM(True)
+            fp.SetExcludedFromPosFiles(True)
     x, y = placement[ref]
     fp.SetPosition(pcbnew.VECTOR2I(pcbnew.FromMM(x), pcbnew.FromMM(y)))
     board.Add(fp)
