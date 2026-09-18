@@ -140,9 +140,27 @@ Consequences of that, now fixed:
 pair (no analog supply pin to decouple separately), so there's one 100nF
 decoupling cap (C3) instead of the F042's two.
 
-**No BOOT0 pin**: same situation as before — boot-from-bootloader is
-selected via the `nBOOT0`/`nBOOT_SEL` option bytes through the SWD debugger
-(e.g. STM32CubeProgrammer), not a physical strap.
+**PA14 (SWCLK) is also a shared BOOT0 pin, but it's dormant by default**:
+ST's pin database names pin 19 **PA14-BOOT0** — after the PF2-NRST finding
+above, this project audited the STM32_open_pin_data XML for every other pin
+with a similar hyphenated (option-byte-special) name and found exactly two
+more: `PA14-BOOT0` and the OSC pins below. Unlike NRST, this one needed no
+hardware fix: **`nBOOT_SEL` defaults to 1 from the factory**, meaning the
+physical PA14 pin voltage is *ignored* for boot decisions and boot mode is
+taken purely from the `nBOOT0` option bit (default: boot from main flash).
+So SWCLK on PA14 works exactly like a normal SWD pin with this design as
+wired, with no pull resistor needed. Boot-to-system-bootloader is selected
+by setting `nBOOT0`/`nBOOT_SEL` via the SWD debugger (e.g.
+STM32CubeProgrammer), not a physical strap — unless someone deliberately
+sets `nBOOT_SEL=0` later, which would make PA14's pin voltage matter again
+at every reset.
+
+**PC14/PC15 (pins 2/3) are also shared with the LSE oscillator**, named
+`PC14-OSCX_IN`/`PC15-OSCX_OUT` — also dormant by default: the LSE oscillator
+is off out of reset, and these pins only stop behaving as plain GPIO if
+firmware sets the `LSEON` bit in `RCC_CSR`, which this design's firmware has
+no reason to do (no RTC crystal is fitted here). Left as spare GPIO (NC) as
+before, no hardware change needed.
 
 ## DWM3000 pin mapping (24-pin castellated module)
 
