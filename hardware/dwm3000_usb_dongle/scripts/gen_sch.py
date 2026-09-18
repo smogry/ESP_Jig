@@ -407,6 +407,8 @@ R6 = sch.place("Device:R", "R6", "DNP 1.5k (see README: only if MCU lacks an int
                 "Resistor_SMD:R_0603_1608Metric", (195, 135), R_PINS, dnp=True)
 D1 = sch.place("Device:LED", "D1", "LED", "LED_SMD:LED_0603_1608Metric", (225, 45), LED_PINS)
 R3 = sch.place("Device:R", "R3", "1k", "Resistor_SMD:R_0603_1608Metric", (225, 25), R_PINS)
+D4 = sch.place("Device:LED", "D4", "LED", "LED_SMD:LED_0603_1608Metric", (250, 45), LED_PINS)
+R7 = sch.place("Device:R", "R7", "1k", "Resistor_SMD:R_0603_1608Metric", (250, 25), R_PINS)
 
 # --- SWD programming connector ---
 J2 = sch.place("Connector_Generic:Conn_02x05_Odd_Even", "J2", "3221-10-0300-00",
@@ -511,7 +513,7 @@ nc_pin(U1, "2")     # PC14 spare
 nc_pin(U1, "3")     # PC15 spare
 nc_pin(U1, "11")    # PA4 spare
 nc_pin(U1, "15")    # PA8 spare
-nc_pin(U1, "20")    # PB3/PB4/PB5/PB6 spare
+label_pin(U1, "20", "LED2_CTRL")    # PB3 (of the PB3/PB4/PB5/PB6 multi-bond pad; see README)
 
 label_pin(U1, "1", "LED1_CTRL")                     # PB7/PB8 -> LED1 cathode
 wire_to_power(U1, "4", "+3V3")                      # VDD
@@ -540,6 +542,11 @@ wire_to_power(C5, "2", "GND")
 wire_to_power(R3, "1", "+3V3")
 wire_between(R3, "2", D1, "2")   # R3.2 -> LED1 anode(A, pin2)
 label_pin(D1, "1", "LED1_CTRL")  # LED1 cathode(K) -> PB8 net
+
+# LED2 (second MCU-driven indicator): +3V3 -R7- LED4(A->K) - LED2_CTRL(U1 PB3 sinks)
+wire_to_power(R7, "1", "+3V3")
+wire_between(R7, "2", D4, "2")   # R7.2 -> LED4 anode(A, pin2)
+label_pin(D4, "1", "LED2_CTRL")  # LED4 cathode(K) -> PB3 net
 
 # ---- SWD connector J2 (ARM 10-pin standard) ----
 wire_to_power(J2, "1", "+3V3")   # VTref

@@ -50,9 +50,11 @@ the netlist (`kicad-cli sch export netlist ...`) and re-run `scripts/build_pcb.p
 | R6 | **DNP** — optional USB D+ pull-up (fitted only if needed, see below) | 1.5k | Resistor_SMD:R_0603_1608Metric |
 | R3 | Status LED series | 1k | Resistor_SMD:R_0603_1608Metric |
 | R4, R5 | TX/RX LED series | 330R | Resistor_SMD:R_0603_1608Metric |
-| D1 | Status LED (MCU-driven) | LED | LED_SMD:LED_0603_1608Metric |
+| R7 | Second status LED series | 1k | Resistor_SMD:R_0603_1608Metric |
+| D1 | Status LED 1 (MCU-driven, PB7/PB8) | LED | LED_SMD:LED_0603_1608Metric |
 | D2 | TX activity LED (DWM3000 GPIO3/TXLED) | LED | LED_SMD:LED_0603_1608Metric |
 | D3 | RX activity LED (DWM3000 GPIO2/RXLED) | LED | LED_SMD:LED_0603_1608Metric |
+| D4 | Status LED 2 (MCU-driven, PB3) | LED | LED_SMD:LED_0603_1608Metric |
 
 ## Power tree
 
@@ -86,7 +88,7 @@ ST-generated data, Oct 2024 — see `extra_symbols/STM32C071F8Px.kicad_sym`).
 | 17 | PA12 | USB_DP_MCU | native USB_DP (no remap needed, see below) |
 | 18 | PA13 | SWDIO | |
 | 19 | PA14/PA15 | SWCLK | |
-| 20 | PB3/PB4/PB5/PB6 | NC | spare |
+| 20 | PB3/PB4/PB5/PB6 | LED2_CTRL | sinks D4 (2nd status LED), using the PB3 identity -- see below |
 
 **No external crystal**: like the F042 this replaced, STM32C071 has HSI48
 with a USB-synchronized clock recovery system (CRS), so USB full-speed works
@@ -162,6 +164,17 @@ firmware sets the `LSEON` bit in `RCC_CSR`, which this design's firmware has
 no reason to do (no RTC crystal is fitted here). Left as spare GPIO (NC) as
 before, no hardware change needed.
 
+**Pin 20 is a 4-way multi-bonded pin (PB3/PB4/PB5/PB6 share one physical
+pad)**: this is a *different* mechanism from PF2-NRST/PA14-BOOT0 above — it's
+not option-byte/reset-time special, just one physical pad wired to four GPIO
+peripheral inputs, with a `SYSCFG_CFGR3` register picking which one is
+"live" (the other three are forced to passive/digital-input internally).
+It's an ordinary peripheral register, not a FLASH option byte: no unlock
+sequence, fully rewritable at any time, no bricking risk. **D4 (2nd status
+LED) is wired here using the PB3 identity** — firmware must select PB3 in
+`SYSCFG_CFGR3` (whatever the factory-default selection turns out to be)
+before configuring the pin as a GPIO output, or D4 won't respond.
+
 ## DWM3000 pin mapping (24-pin castellated module)
 
 | Pin | Name | Net |
@@ -209,12 +222,12 @@ before, no hardware change needed.
 ## Validation performed
 
 * `kicad-cli sch export netlist` parses the schematic cleanly and produces
-  the expected 17 signal nets (including `/NRST`) + `+3V3`/`+5V`/`GND`, with
+  the expected 18 signal nets (including `/NRST` and `/LED2_CTRL`) + `+3V3`/`+5V`/`GND`, with
   every remaining "spare"/unused pin explicitly flagged no-connect (verified
   pin-by-pin against the intended design above).
-* All 20 components (19 fitted + DNP R6) loaded their real KiCad footprints
+* All 22 components (21 fitted + DNP R6) loaded their real KiCad footprints
   (including the 2 custom ones) and were placed non-overlapping on a board
-  with all 39 nets wired from the netlist (`dwm3000_usb_dongle.kicad_pcb`).
+  with all 40 nets wired from the netlist (`dwm3000_usb_dongle.kicad_pcb`).
   R6 is marked excluded from BOM/position files to match its schematic DNP flag.
 * Schematic and PCB were rendered to PDF/SVG/PNG for visual review.
 
