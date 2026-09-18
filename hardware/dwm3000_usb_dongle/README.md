@@ -6,8 +6,11 @@ non-overlapping layout only (routing is not done yet).
 
 > **Rev history**: originally designed around an STM32F042F6P6; swapped to
 > STM32C071F8P6 (same TSSOP20 footprint, but a different pinout — see the MCU
-> section below for what changed: no NRST pin, no separate VDDA pin, and
-> USB_DM/DP are native PA11/PA12 with no remap needed).
+> section below for what changed: PF2/NRST is a shared pin instead of a
+> dedicated NRST, no separate VDDA pin, and USB_DM/DP are native PA11/PA12
+> with no remap needed). A previous revision of this README incorrectly said
+> this package "has no NRST pin at all" and left it unconnected -- that was
+> wrong (see the corrected MCU section below); pin 6 is wired to J2 nRESET now.
 
 ## Files
 
@@ -41,7 +44,7 @@ the netlist (`kicad-cli sch export netlist ...`) and re-run `scripts/build_pcb.p
 | J1 | USB-4AM103AS (Neltron 5075AR-04-XX-XX equivalent) | USB-A receptacle, right-angle THT | dongle:USB_A_Neltron_5075AR-04 (custom) |
 | J2 | CnC Tech 3221-10-0300-00 | 1.27mm SMT box header, 2x5 | dongle:BoxHeader_2x05_P1.27mm_CnCTech_3221 (custom) |
 | C1, C2 | Ceramic | 10uF | Capacitor_SMD:C_0805_2012Metric |
-| C3, C7 | Ceramic | 100nF | Capacitor_SMD:C_0603_1608Metric |
+| C3, C5, C7 | Ceramic | 100nF | Capacitor_SMD:C_0603_1608Metric |
 | C6 | Ceramic | 1uF | Capacitor_SMD:C_0603_1608Metric |
 | R1, R2 | USB D+/D- series | 22R | Resistor_SMD:R_0603_1608Metric |
 | R6 | **DNP** — optional USB D+ pull-up (fitted only if needed, see below) | 1.5k | Resistor_SMD:R_0603_1608Metric |
@@ -69,7 +72,7 @@ ST-generated data, Oct 2024 — see `extra_symbols/STM32C071F8Px.kicad_sym`).
 | 3 | PC15 | NC | spare |
 | 4 | VDD | +3V3 | single supply pin (no separate VDDA on this package) |
 | 5 | VSS | GND | |
-| 6 | PF2 | NC | spare |
+| 6 | PF2-NRST | NRST | shared pin, defaults to reset input (see below); to J2.10, 100nF to GND (C5) |
 | 7 | PA0 | DWM_WAKEUP | drives DWM3000 WAKEUP |
 | 8 | PA1 | DWM_RSTN | open-drain reset to DWM3000 RSTn |
 | 9 | PA2 | DWM_IRQ | input, DWM3000 IRQ/GPIO8 |
@@ -106,23 +109,58 @@ and bring the board up first. Only stuff R6 if enumeration fails or the
 device isn't detected as full-speed, which would indicate the internal
 pull-up either isn't present or isn't enabled by your firmware.
 
-**No NRST pin on this package**: unlike the F042F6P6, this specific
-TSSOP20 STM32C0 variant has no dedicated reset pin at all (18 GPIO instead —
-ST traded the reset pin for one more GPIO). Consequences:
-* J2 pin 10 (nRESET) has nothing to connect to on the MCU side and is left
-  no-connect. A hardware "connect under reset" isn't possible; use a normal
-  SWD connect and the debugger's software `AIRCR.SYSRESETREQ` reset instead
-  (works fine with ST-Link/OpenOCD/PyOCD for normal flashing and debugging).
-* There is no discrete NRST filter capacitor in this design (the previous
-  100nF C5 was removed along with the pin it filtered).
+**Pin 6 is a shared PF2/NRST pin, not a dedicated NRST**: unlike the
+F042F6P6's pin 4 (a dedicated NRST-only pin), pin 6 on this package is
+named **PF2-NRST** in ST's own pin database. This was missed in an earlier
+revision of this project: the KiCad symbol used to derive the pin table
+(`extra_symbols/STM32C071F8Px.kicad_sym`) only lists this pin's normal
+GPIO alternate functions (`PF2`, `RCC_MCO`, `TIM1_CH4`) because the
+reset/GPIO duality isn't a regular alternate function — it's controlled by
+the **`NRST_MODE[1:0]` option byte**, which isn't part of a KiCad symbol's
+pin table at all. Cross-checked against ST's public
+[STM32_open_pin_data](https://github.com/STMicroelectronics/STM32_open_pin_data)
+MCU database, which does carry the pin's real name (`PF2-NRST`).
+
+Consequences of that, now fixed:
+* **Out of the box (factory-default option bytes) this pin behaves as a
+  normal NRST reset input**, so it's wired to J2 pin 10 (nRESET) like any
+  other STM32 design, with a 100nF filter cap (C5) per the usual
+  ST hardware design guidelines (AN2586). Hardware "connect under reset"
+  works normally with ST-Link/OpenOCD/PyOCD.
+* Firmware *can* reclaim this pin as a plain GPIO (`PF2`) by setting
+  `NRST_MODE[1:0]` = GPIO in the option bytes — but this project does not
+  do that, and doing so is not recommended without a specific need: ST's
+  own community forum documents real pitfalls (the pin still gates
+  power-on reset until it sees a valid `VIH(NRST)` level even in GPIO mode,
+  and it's possible to end up unable to re-enter reset/debug mode without a
+  recovery procedure). Leave `NRST_MODE` at its default and use J2/NRST for
+  hardware reset as wired here.
 
 **No separate VDDA pin either**: this package has a single VDD/VSS supply
 pair (no analog supply pin to decouple separately), so there's one 100nF
 decoupling cap (C3) instead of the F042's two.
 
-**No BOOT0 pin**: same situation as before — boot-from-bootloader is
-selected via the `nBOOT0`/`nBOOT_SEL` option bytes through the SWD debugger
-(e.g. STM32CubeProgrammer), not a physical strap.
+**PA14 (SWCLK) is also a shared BOOT0 pin, but it's dormant by default**:
+ST's pin database names pin 19 **PA14-BOOT0** — after the PF2-NRST finding
+above, this project audited the STM32_open_pin_data XML for every other pin
+with a similar hyphenated (option-byte-special) name and found exactly two
+more: `PA14-BOOT0` and the OSC pins below. Unlike NRST, this one needed no
+hardware fix: **`nBOOT_SEL` defaults to 1 from the factory**, meaning the
+physical PA14 pin voltage is *ignored* for boot decisions and boot mode is
+taken purely from the `nBOOT0` option bit (default: boot from main flash).
+So SWCLK on PA14 works exactly like a normal SWD pin with this design as
+wired, with no pull resistor needed. Boot-to-system-bootloader is selected
+by setting `nBOOT0`/`nBOOT_SEL` via the SWD debugger (e.g.
+STM32CubeProgrammer), not a physical strap — unless someone deliberately
+sets `nBOOT_SEL=0` later, which would make PA14's pin voltage matter again
+at every reset.
+
+**PC14/PC15 (pins 2/3) are also shared with the LSE oscillator**, named
+`PC14-OSCX_IN`/`PC15-OSCX_OUT` — also dormant by default: the LSE oscillator
+is off out of reset, and these pins only stop behaving as plain GPIO if
+firmware sets the `LSEON` bit in `RCC_CSR`, which this design's firmware has
+no reason to do (no RTC crystal is fitted here). Left as spare GPIO (NC) as
+before, no hardware change needed.
 
 ## DWM3000 pin mapping (24-pin castellated module)
 
@@ -155,7 +193,7 @@ selected via the `nBOOT0`/`nBOOT_SEL` option bytes through the SWD debugger
 | 6 | SWO | NC (Cortex-M0+ has no trace/SWO) |
 | 7 | KEY | NC |
 | 8 | TDI | NC (SWD only, no JTAG on Cortex-M0+) |
-| 10 | nRESET | NC (STM32C071F8Px has no NRST pin, see MCU section above) |
+| 10 | nRESET | NRST (STM32 PF2-NRST, pin 6 — see MCU section above) |
 
 ## Custom footprints
 
@@ -171,12 +209,12 @@ selected via the `nBOOT0`/`nBOOT_SEL` option bytes through the SWD debugger
 ## Validation performed
 
 * `kicad-cli sch export netlist` parses the schematic cleanly and produces
-  the expected 16 signal nets + `+3V3`/`+5V`/`GND`, with every "spare"/unused
-  pin explicitly flagged no-connect (verified pin-by-pin against the
-  intended design above, including J2 pin 10 now that the MCU has no NRST).
-* All 19 components (18 fitted + DNP R6) loaded their real KiCad footprints
+  the expected 17 signal nets (including `/NRST`) + `+3V3`/`+5V`/`GND`, with
+  every remaining "spare"/unused pin explicitly flagged no-connect (verified
+  pin-by-pin against the intended design above).
+* All 20 components (19 fitted + DNP R6) loaded their real KiCad footprints
   (including the 2 custom ones) and were placed non-overlapping on a board
-  with all 40 nets wired from the netlist (`dwm3000_usb_dongle.kicad_pcb`).
+  with all 39 nets wired from the netlist (`dwm3000_usb_dongle.kicad_pcb`).
   R6 is marked excluded from BOM/position files to match its schematic DNP flag.
 * Schematic and PCB were rendered to PDF/SVG/PNG for visual review.
 
