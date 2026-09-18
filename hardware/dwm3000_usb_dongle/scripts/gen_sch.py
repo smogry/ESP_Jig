@@ -400,6 +400,7 @@ C2 = sch.place("Device:C", "C2", "10uF", "Capacitor_SMD:C_0805_2012Metric", (125
 U1 = sch.place("MCU_ST_STM32C0:STM32C071F8Px", "U1", "STM32C071F8P6",
                "Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm", (190, 115), STM32_PINS)
 C3 = sch.place("Device:C", "C3", "100nF", "Capacitor_SMD:C_0603_1608Metric", (150, 55), C_PINS)
+C5 = sch.place("Device:C", "C5", "100nF", "Capacitor_SMD:C_0603_1608Metric", (150, 90), C_PINS)
 R1 = sch.place("Device:R", "R1", "22R", "Resistor_SMD:R_0603_1608Metric", (145, 135), R_PINS)
 R2 = sch.place("Device:R", "R2", "22R", "Resistor_SMD:R_0603_1608Metric", (170, 135), R_PINS)
 R6 = sch.place("Device:R", "R6", "DNP 1.5k (see README: only if MCU lacks an internal USB D+ pull-up)",
@@ -505,10 +506,9 @@ label_pin(R2, "2", "USB_DP_MCU", stub_len=7.0, label_angle=90)
 wire_to_power(R6, "1", "+3V3")
 label_pin(R6, "2", "USB_DP_MCU", stub_len=7.0, label_angle=90)
 
-# ---- STM32 U1 (STM32C071F8Px: no NRST pin, no separate VDDA pin) ----
+# ---- STM32 U1 (STM32C071F8Px: PF2/NRST shared pin, no separate VDDA pin) ----
 nc_pin(U1, "2")     # PC14 spare
 nc_pin(U1, "3")     # PC15 spare
-nc_pin(U1, "6")     # PF2 spare
 nc_pin(U1, "11")    # PA4 spare
 nc_pin(U1, "15")    # PA8 spare
 nc_pin(U1, "20")    # PB3/PB4/PB5/PB6 spare
@@ -516,6 +516,7 @@ nc_pin(U1, "20")    # PB3/PB4/PB5/PB6 spare
 label_pin(U1, "1", "LED1_CTRL")                     # PB7/PB8 -> LED1 cathode
 wire_to_power(U1, "4", "+3V3")                      # VDD
 wire_to_power(U1, "5", "GND")                       # VSS
+label_pin(U1, "6", "NRST")                          # PF2-NRST (reset by default; NRST_MODE option byte can turn it into plain PF2)
 label_pin(U1, "7", "DWM_WAKEUP")                    # PA0
 label_pin(U1, "8", "DWM_RSTN")                      # PA1
 label_pin(U1, "9", "DWM_IRQ")                       # PA2
@@ -530,6 +531,10 @@ label_pin(U1, "19", "SWCLK")                        # PA14/PA15
 
 # C3: single VDD/VSS decoupling cap (this package has no separate VDDA pin)
 wire_to_power(C3, "1", "+3V3"); wire_to_power(C3, "2", "GND")
+
+# C5: NRST filter cap (standard practice per AN2586 hardware guidelines)
+label_pin(C5, "1", "NRST")
+wire_to_power(C5, "2", "GND")
 
 # LED1 status indicator: +3V3 -R3- LED1(A->K) - LED1_CTRL(U1 PB8 sinks)
 wire_to_power(R3, "1", "+3V3")
@@ -546,7 +551,7 @@ nc_pin(J2, "6")                  # SWO - not present on Cortex-M0+
 nc_pin(J2, "7")                  # KEY
 nc_pin(J2, "8")                  # TDI - not present on Cortex-M0+ (SWD only)
 wire_to_power(J2, "9", "GND")
-nc_pin(J2, "10")                 # nRESET - STM32C071F8Px has no NRST pin to wire to
+label_pin(J2, "10", "NRST")      # nRESET -> STM32 PF2-NRST (pin 6)
 
 # ---- DWM3000 module ----
 nc_pin(DWM1, "1")   # EXTON (device-enable output; not used)
