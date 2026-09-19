@@ -16,6 +16,7 @@ FP_DIRS = {
     "Resistor_SMD": "/usr/share/kicad/footprints/Resistor_SMD.pretty",
     "Capacitor_SMD": "/usr/share/kicad/footprints/Capacitor_SMD.pretty",
     "LED_SMD": "/usr/share/kicad/footprints/LED_SMD.pretty",
+    "Fuse": "/usr/share/kicad/footprints/Fuse.pretty",
     "dongle": "/home/user/ESP_Jig/hardware/dwm3000_usb_dongle/dongle.pretty",
 }
 
@@ -75,7 +76,9 @@ print(f"parsed {len(components)} components, {len(nets)} nets")
 
 placement = {
     # Power supply
-    "J1": (25, 30), "U2": (65, 30), "C1": (65, 55), "C2": (85, 55),
+    "J1": (25, 30), "F1": (40, 30), "C4": (40, 45), "U3": (45, 55),
+    "U2": (65, 30), "C1": (65, 55), "C8": (75, 55), "C2": (85, 55),
+    "D5": (55, 70), "R9": (55, 80),
     # MCU
     "U1": (150, 55), "C3": (120, 25), "C5": (120, 90),
     "R1": (130, 90), "R2": (150, 90), "R6": (170, 90), "D1": (195, 32), "R3": (195, 18),
