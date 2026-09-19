@@ -51,16 +51,27 @@ the netlist (`kicad-cli sch export netlist ...`) and re-run `scripts/build_pcb.p
 | R3 | Status LED series | 1k | Resistor_SMD:R_0603_1608Metric |
 | R4, R5 | TX/RX LED series | 330R | Resistor_SMD:R_0603_1608Metric |
 | R7 | Second status LED series | 1k | Resistor_SMD:R_0603_1608Metric |
+| R9 | Power-indicator LED series | 1k | Resistor_SMD:R_0603_1608Metric |
 | D1 | Status LED 1 (MCU-driven, PB7/PB8) | LED | LED_SMD:LED_0603_1608Metric |
 | D2 | TX activity LED (DWM3000 GPIO3/TXLED) | LED | LED_SMD:LED_0603_1608Metric |
 | D3 | RX activity LED (DWM3000 GPIO2/RXLED) | LED | LED_SMD:LED_0603_1608Metric |
 | D4 | Status LED 2 (MCU-driven, PB3) | LED | LED_SMD:LED_0603_1608Metric |
+| D5 | Power indicator LED (always on, not MCU-driven) | LED | LED_SMD:LED_0603_1608Metric |
+| U3 | ST USBLC6-2SC6 | USB D+/D- ESD protection | Package_TO_SOT_SMD:SOT-23-6 |
+| F1 | Resettable PTC fuse, VBUS input | 500mA | Fuse:Fuse_0603_1608Metric |
+| C4 | Ceramic, VBUS HF bypass (ahead of F1) | 100nF | Capacitor_SMD:C_0603_1608Metric |
+| C8 | Ceramic, VBUS HF bypass (LDO input, parallel with C1) | 100nF | Capacitor_SMD:C_0603_1608Metric |
 
 ## Power tree
 
-`USB VBUS (5V)` -> `U2 XC6220B331` -> `+3V3` -> STM32 VDD, DWM3000
-VDD1(AON)/VDD3V3 x2. U2's CE is tied directly to VIN (always enabled); it is
-the "B" series part (CL auto-discharge, no CE pull-down needed).
+`USB VBUS` -> `J1 pin1` -> `C4 (100nF HF bypass)` -> `F1 (500mA PTC fuse)` ->
+`+5V` -> `C1 (10uF) / C8 (100nF)` -> `U2 XC6220B331` -> `+3V3` -> STM32 VDD,
+DWM3000 VDD1(AON)/VDD3V3 x2, and D5/R9 (always-on power-indicator LED). U2's
+CE is tied directly to VIN (always enabled); it is the "B" series part (CL
+auto-discharge, no CE pull-down needed).
+
+`J1 D-/D+` -> `U3 (USBLC6-2SC6 ESD protection)` -> `R1/R2 (22R series)` ->
+STM32 PA11/PA12 (USB_DM/USB_DP).
 
 ## STM32C071F8P6 pin mapping (TSSOP-20)
 
@@ -110,6 +121,27 @@ a footprint-only safety net: leave it unpopulated (its default `DNP` state)
 and bring the board up first. Only stuff R6 if enumeration fails or the
 device isn't detected as full-speed, which would indicate the internal
 pull-up either isn't present or isn't enabled by your firmware.
+
+## USB protection, VBUS filtering, power indicator
+
+* **U3 (USBLC6-2SC6)**: dual-line, low-capacitance ESD protection diode
+  array (SOT-23-6), inserted in series on D-/D+ between the connector (J1)
+  and the existing series resistors (R1/R2) feeding the MCU. Its VBUS pin
+  is tied to the (post-fuse) `+5V` rail as the clamp reference, per its
+  datasheet. This does not replace R1/R2 — both stay in place downstream
+  of U3.
+* **F1 (500mA resettable PTC fuse) + C4/C8 (100nF HF bypass)**: VBUS from
+  the connector now passes through a small HF bypass cap (C4, right at the
+  connector) and a resettable fuse (F1) before becoming the board's `+5V`
+  rail; C8 adds a second HF bypass cap at the LDO input, alongside the
+  existing bulk cap C1. This protects the host's USB port (and this board)
+  from an accidental VBUS short or overcurrent fault downstream, and the
+  extra HF caps improve high-frequency supply noise rejection beyond what
+  the two 10uF bulk caps (C1/C2) alone provide.
+* **D5/R9 (always-on power indicator LED)**: wired straight across `+3V3`
+  and `GND` (not MCU-driven, unlike D1/D4), so it lights whenever the LDO
+  output is good — independent of firmware/MCU state, useful for confirming
+  the board is powered even if the MCU isn't running.
 
 **Pin 6 is a shared PF2/NRST pin, not a dedicated NRST**: unlike the
 F042F6P6's pin 4 (a dedicated NRST-only pin), pin 6 on this package is
@@ -222,14 +254,20 @@ before configuring the pin as a GPIO output, or D4 won't respond.
 ## Validation performed
 
 * `kicad-cli sch export netlist` parses the schematic cleanly and produces
-  the expected 18 signal nets (including `/NRST` and `/LED2_CTRL`) + `+3V3`/`+5V`/`GND`, with
+  the expected 21 signal nets (including `/NRST`, `/LED2_CTRL`,
+  `/USB_DM_RAW`, `/USB_DP_RAW`, `/VBUS_RAW`) + `+3V3`/`+5V`/`GND`, with
   every remaining "spare"/unused pin explicitly flagged no-connect (verified
   pin-by-pin against the intended design above).
-* All 22 components (21 fitted + DNP R6) loaded their real KiCad footprints
+* All 28 components (27 fitted + DNP R6) loaded their real KiCad footprints
   (including the 2 custom ones) and were placed non-overlapping on a board
-  with all 40 nets wired from the netlist (`dwm3000_usb_dongle.kicad_pcb`).
+  with all 44 nets wired from the netlist (`dwm3000_usb_dongle.kicad_pcb`).
   R6 is marked excluded from BOM/position files to match its schematic DNP flag.
 * Schematic and PCB were rendered to PDF/SVG/PNG for visual review.
+* U3 (USBLC6-2SC6)'s pin table was taken verbatim from its parent symbol
+  (`USBLC6-2P6` in the system `Power_Protection.kicad_sym`, extends-flattened
+  the same way as DWM3000/DWM1000). Its 4 signal pins are only 2.54mm apart,
+  so they're routed out with a short vertical jog (`jog_label()` in
+  `gen_sch.py`) rather than straight stubs, to keep the net labels legible.
 
 ### A note on the STM32C071F8Px symbol
 

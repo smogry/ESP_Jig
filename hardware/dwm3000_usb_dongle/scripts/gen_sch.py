@@ -46,7 +46,8 @@ LIB_SOURCES = {
     "Regulator_Linear": ("Regulator_Linear.kicad_sym", ["XC6220B331MR"]),
     "Connector": ("Connector.kicad_sym", ["USB_A"]),
     "Connector_Generic": ("Connector_Generic.kicad_sym", ["Conn_02x05_Odd_Even"]),
-    "Device": ("Device.kicad_sym", ["R", "C", "LED"]),
+    "Device": ("Device.kicad_sym", ["R", "C", "LED", "Fuse"]),
+    "Power_Protection": ("Power_Protection.kicad_sym", ["USBLC6-2SC6"]),
     "power": ("power.kicad_sym", ["GND", "+3V3", "+5V"]),
 }
 
@@ -243,6 +244,19 @@ R_PINS = {"1": (0, 3.81, 270, 1.27, "~"), "2": (0, -3.81, 90, 1.27, "~")}
 C_PINS = {"1": (0, 3.81, 270, 2.794, "~"), "2": (0, -3.81, 90, 2.794, "~")}
 LED_PINS = {"1": (-3.81, 0, 0, 2.54, "K"), "2": (3.81, 0, 180, 2.54, "A")}
 PWR_IN_PIN = {"1": (0, 0, 90, 0, "PWR")}   # generic single power pin @ origin, points up (0 length)
+FUSE_PINS = {"1": (0, 3.81, 270, 1.27, "~"), "2": (0, -3.81, 90, 1.27, "~")}  # same geometry as R_PINS
+
+# USBLC6-2SC6 (dual-line USB ESD protection, SOT-23-6): pin geometry taken
+# verbatim from the parent symbol USBLC6-2P6 (Power_Protection.kicad_sym).
+# I/O1 = pins 1<->6 (through), I/O2 = pins 3<->4 (through), 2=GND, 5=VBUS.
+USBLC6_PINS = {
+    "1": (-5.08, 0,     0,   2.54, "I/O1"),
+    "2": (0,     -7.62, 90,  2.54, "GND"),
+    "3": (-5.08, -2.54, 0,   2.54, "I/O2"),
+    "4": (5.08,  -2.54, 180, 2.54, "I/O2"),
+    "5": (0,     5.08,  270, 2.54, "VBUS"),
+    "6": (5.08,  0,     180, 2.54, "I/O1"),
+}
 
 def ang_to_dir(angle):
     a = angle % 360
@@ -391,10 +405,17 @@ sch = Schematic()
 # --- Power supply section ---
 J1 = sch.place("Connector:USB_A", "J1", "USB-4AM103AS", "dongle:USB_A_Neltron_5075AR-04",
                (30, 100), USB_A_PINS)
+F1 = sch.place("Device:Fuse", "F1", "500mA", "Fuse:Fuse_0603_1608Metric", (55, 135), FUSE_PINS)
+C4 = sch.place("Device:C", "C4", "100nF", "Capacitor_SMD:C_0603_1608Metric", (45, 155), C_PINS)
+U3 = sch.place("Power_Protection:USBLC6-2SC6", "U3", "USBLC6-2SC6",
+               "Package_TO_SOT_SMD:SOT-23-6", (60, 65), USBLC6_PINS)
 U2 = sch.place("Regulator_Linear:XC6220B331MR", "U2", "XC6220B331MR-G",
                "Package_TO_SOT_SMD:SOT-23-5", (90, 90), XC6220_PINS)
 C1 = sch.place("Device:C", "C1", "10uF", "Capacitor_SMD:C_0805_2012Metric", (65, 135), C_PINS)
+C8 = sch.place("Device:C", "C8", "100nF", "Capacitor_SMD:C_0603_1608Metric", (80, 135), C_PINS)
 C2 = sch.place("Device:C", "C2", "10uF", "Capacitor_SMD:C_0805_2012Metric", (125, 135), C_PINS)
+D5 = sch.place("Device:LED", "D5", "LED", "LED_SMD:LED_0603_1608Metric", (110, 45), LED_PINS)
+R9 = sch.place("Device:R", "R9", "1k", "Resistor_SMD:R_0603_1608Metric", (110, 25), R_PINS)
 
 # --- MCU section ---
 U1 = sch.place("MCU_ST_STM32C0:STM32C071F8Px", "U1", "STM32C071F8P6",
@@ -475,27 +496,68 @@ def label_pin(inst, num, net, stub_len=3.81, label_angle=0):
 def nc_pin(inst, num):
     inst.stub(sch, num, None, no_conn=True)
 
+def jog_label(inst, num, net, dx1, dy, dx2):
+    """Route a pin out with a short straight run (dx1) then a vertical jog
+    (dy) before the label -- used for parts with pins spaced too tightly
+    (e.g. USBLC6-2SC6's 2.54mm pin pitch) for straight same-row labels to
+    stay legible."""
+    p0 = inst.pin_end(num)
+    p1 = (p0[0] + dx1, p0[1])
+    p2 = (p1[0], p1[1] + dy)
+    p3 = (p2[0] + dx2, p2[1])
+    sch.wire(p0, p1)
+    sch.wire(p1, p2)
+    sch.wire(p2, p3)
+    sch.label(net, p3, 0)
+
 # ===================== NET WIRING =====================
 
 # ---- Power rails ----
-# USB connector
-wire_to_power(J1, "1", "+5V")                       # VBUS
-label_pin(J1, "2", "USB_DM", stub_len=7.0)          # to R1
-label_pin(J1, "3", "USB_DP", stub_len=7.0)          # to R2
+# USB connector: VBUS -> F1 (resettable fuse) -> +5V; D-/D+ -> U3 (ESD array) -> R1/R2
+label_pin(J1, "1", "VBUS_RAW", stub_len=7.0)        # to F1
+label_pin(J1, "2", "USB_DM_RAW", stub_len=7.0)      # to U3 (ESD protection)
+label_pin(J1, "3", "USB_DP_RAW", stub_len=7.0)      # to U3 (ESD protection)
 wire_to_power(J1, "4", "GND")
 wire_to_power(J1, "5", "GND", stub_len=7.0)
 
-# LDO regulator U2: VIN/CE <= +5V (VBUS), GND, VOUT => +3V3
+# F1: resettable fuse, VBUS_RAW (from connector) -> +5V (protected rail)
+label_pin(F1, "1", "VBUS_RAW")
+label_pin(F1, "2", "+5V")
+
+# C4: HF bypass right at the connector, ahead of the fuse
+label_pin(C4, "1", "VBUS_RAW"); wire_to_power(C4, "2", "GND")
+
+# U3 (USBLC6-2SC6): dual-line USB ESD protection, inserted in series between
+# the raw connector D-/D+ and the series resistors R1/R2 feeding the MCU.
+# I/O1 (pins 1<->6) = D-, I/O2 (pins 3<->4) = D+. The two I/O pin pairs are
+# only 2.54mm apart, so each pin is routed out with a short vertical jog
+# (up for the pin1/6 pair, down for pin3/4) to keep the four net labels
+# from overlapping each other/the symbol's own pin numbers.
+jog_label(U3, "1", "USB_DM_RAW", -2.0, -3.0, -5.0)
+jog_label(U3, "6", "USB_DM", 2.0, -3.0, 5.0)         # feeds R1 (unchanged downstream net name)
+jog_label(U3, "3", "USB_DP_RAW", -2.0, 3.0, -5.0)
+jog_label(U3, "4", "USB_DP", 2.0, 3.0, 5.0)         # feeds R2 (unchanged downstream net name)
+wire_to_power(U3, "2", "GND")
+wire_to_power(U3, "5", "+5V")
+
+# LDO regulator U2: VIN/CE <= +5V (VBUS, post-fuse), GND, VOUT => +3V3
 wire_to_power(U2, "1", "+5V")
 wire_to_power(U2, "3", "+5V")     # CE tied to VIN -> always enabled
 wire_to_power(U2, "2", "GND")
 wire_to_power(U2, "5", "+3V3")
 
-# C1 (LDO input cap, VBUS<->GND), C2 (LDO output cap, +3V3<->GND)
+# C1 (LDO input cap, VBUS<->GND), C8 (LDO input HF bypass), C2 (LDO output cap, +3V3<->GND)
 wire_to_power(C1, "1", "+5V")
 wire_to_power(C1, "2", "GND")
+wire_to_power(C8, "1", "+5V")
+wire_to_power(C8, "2", "GND")
 wire_to_power(C2, "1", "+3V3")
 wire_to_power(C2, "2", "GND")
+
+# D5/R9: always-on power indicator LED (lit whenever +3V3 is present, no MCU control)
+wire_to_power(R9, "1", "+3V3")
+wire_between(R9, "2", D5, "2")   # R9.2 -> D5 anode(A, pin2)
+wire_to_power(D5, "1", "GND")    # D5 cathode(K) -> GND
 
 # ---- USB series resistors R1 (D-) / R2 (D+) between connector and MCU ----
 label_pin(R1, "1", "USB_DM", stub_len=7.0, label_angle=90)
